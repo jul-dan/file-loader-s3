@@ -19,76 +19,37 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
 # Environment variables
-AWS_ROLE_ARN = os.getenv('AWS_ROLE_ARN')
-AWS_WEB_IDENTITY_TOKEN_FILE = os.getenv(
-    'AWS_WEB_IDENTITY_TOKEN_FILE',
-    '/var/run/secrets/eks.amazonaws.com/serviceaccount/token'
-)
 AWS_REGION = os.getenv('AWS_REGION', 'eu-west-1')
 S3_BUCKET_NAME = os.getenv('S3_BUCKET_NAME')
+AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
 
 logger.info("=== Application Configuration ===")
 logger.info(f"AWS_REGION: {AWS_REGION}")
 logger.info(f"S3_BUCKET_NAME: {S3_BUCKET_NAME}")
-logger.info(f"AWS_ROLE_ARN: {AWS_ROLE_ARN if AWS_ROLE_ARN else 'Not defined (using classic credentials)'}")
-logger.info(f"AWS_WEB_IDENTITY_TOKEN_FILE: {AWS_WEB_IDENTITY_TOKEN_FILE}")
+logger.info(f"AWS_ACCESS_KEY_ID: {'*' * 8 if AWS_ACCESS_KEY_ID else 'Not defined'}")
+logger.info(f"AWS_SECRET_ACCESS_KEY: {'*' * 8 if AWS_SECRET_ACCESS_KEY else 'Not defined'}")
 
 
 def get_s3_client():
     """
-    Creates and returns an S3 client with the appropriate authentication method.
+    Creates and returns an S3 client using AWS credentials.
 
-    Priority:
-    1. If AWS_ROLE_ARN and OIDC token are present → assume role via OIDC
-    2. Otherwise → use default credentials (env vars, instance profile, etc.)
+    Uses AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY from environment variables.
     """
     try:
-        # Method 1: Assume role via OIDC (for EKS/Kubernetes)
-        if AWS_ROLE_ARN and os.path.exists(AWS_WEB_IDENTITY_TOKEN_FILE):
-            logger.info("Using OIDC authentication with assume role")
+        logger.info("Creating S3 client with AWS credentials")
 
-            # Read the OIDC token
-            with open(AWS_WEB_IDENTITY_TOKEN_FILE, 'r') as token_file:
-                web_identity_token = token_file.read().strip()
-
-            # Create STS client to assume the role
-            sts_client = boto3.client('sts', region_name=AWS_REGION)
-
-            # Assume role with OIDC token
-            response = sts_client.assume_role_with_web_identity(
-                RoleArn=AWS_ROLE_ARN,
-                RoleSessionName=f"flask-s3-uploader-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                WebIdentityToken=web_identity_token
-            )
-
-            # Extract temporary credentials
-            credentials = response['Credentials']
-            logger.info(f"Role assumed successfully: {AWS_ROLE_ARN}")
-
-            # Create S3 client with temporary credentials
-            s3_client = boto3.client(
-                's3',
-                region_name=AWS_REGION,
-                aws_access_key_id=credentials['AccessKeyId'],
-                aws_secret_access_key=credentials['SecretAccessKey'],
-                aws_session_token=credentials['SessionToken']
-            )
-
-        # Method 2: Classic credentials (env vars or instance profile)
-        else:
-            logger.info("Using classic AWS credentials")
-            s3_client = boto3.client('s3', region_name=AWS_REGION)
+        # Create S3 client (boto3 will automatically use AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY from env vars)
+        s3_client = boto3.client('s3', region_name=AWS_REGION)
 
         # Connection test
         s3_client.list_buckets()
         logger.info("S3 client created successfully")
         return s3_client
 
-    except FileNotFoundError:
-        logger.error(f"OIDC token not found: {AWS_WEB_IDENTITY_TOKEN_FILE}")
-        raise
     except NoCredentialsError:
-        logger.error("No AWS credentials found")
+        logger.error("No AWS credentials found. Please set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY")
         raise
     except ClientError as e:
         logger.error(f"Error creating S3 client: {e}")
@@ -396,7 +357,7 @@ HTML_TEMPLATE = """
 @app.route('/')
 def index():
     """Home page with upload form"""
-    auth_method = "OIDC (IAM Role)" if AWS_ROLE_ARN else "AWS Credentials"
+    auth_method = "AWS Access Key"
 
     return render_template_string(
         HTML_TEMPLATE,
@@ -419,7 +380,7 @@ def upload():
                 HTML_TEMPLATE,
                 region=AWS_REGION,
                 bucket=S3_BUCKET_NAME,
-                auth_method="OIDC (IAM Role)" if AWS_ROLE_ARN else "AWS Credentials",
+                auth_method="AWS Access Key",
                 message="❌ No file selected",
                 message_type='error'
             )
@@ -433,7 +394,7 @@ def upload():
                 HTML_TEMPLATE,
                 region=AWS_REGION,
                 bucket=S3_BUCKET_NAME,
-                auth_method="OIDC (IAM Role)" if AWS_ROLE_ARN else "AWS Credentials",
+                auth_method="AWS Access Key",
                 message="❌ No file selected",
                 message_type='error'
             )
@@ -457,7 +418,7 @@ def upload():
             HTML_TEMPLATE,
             region=AWS_REGION,
             bucket=S3_BUCKET_NAME,
-            auth_method="OIDC (IAM Role)" if AWS_ROLE_ARN else "AWS Credentials",
+            auth_method="AWS Access Key",
             message=success_message,
             message_type='success'
         )
@@ -468,7 +429,7 @@ def upload():
             HTML_TEMPLATE,
             region=AWS_REGION,
             bucket=S3_BUCKET_NAME or "Not configured",
-            auth_method="OIDC (IAM Role)" if AWS_ROLE_ARN else "AWS Credentials",
+            auth_method="AWS Access Key",
             message=f"❌ Configuration error: {str(e)}",
             message_type='error'
         )
@@ -479,7 +440,7 @@ def upload():
             HTML_TEMPLATE,
             region=AWS_REGION,
             bucket=S3_BUCKET_NAME,
-            auth_method="OIDC (IAM Role)" if AWS_ROLE_ARN else "AWS Credentials",
+            auth_method="AWS Access Key",
             message=f"❌ Upload error: {str(e)}",
             message_type='error'
         )
@@ -492,7 +453,7 @@ def health():
         'status': 'healthy',
         'region': AWS_REGION,
         'bucket': S3_BUCKET_NAME,
-        'auth_method': 'OIDC' if AWS_ROLE_ARN else 'credentials'
+        'auth_method': 'access_key'
     }), 200
 
 
