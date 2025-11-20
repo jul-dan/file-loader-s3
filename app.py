@@ -20,7 +20,7 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
 # Environment variables
 AWS_REGION = os.getenv('AWS_REGION', 'eu-west-1')
-S3_BUCKET_NAME = os.getenv('S3_BUCKET_NAME')
+S3_BUCKET_NAME = os.getenv('BUCKET_NAME')
 AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
 
@@ -68,7 +68,7 @@ def upload_file_to_s3(file, filename):
         dict: Information about the uploaded file
     """
     if not S3_BUCKET_NAME:
-        raise ValueError("S3_BUCKET_NAME is not defined")
+        raise ValueError("BUCKET_NAME environment variable is not defined")
 
     try:
         s3_client = get_s3_client()
@@ -460,7 +460,7 @@ def health():
 if __name__ == '__main__':
     # Configuration check
     if not S3_BUCKET_NAME:
-        logger.warning("⚠️  S3_BUCKET_NAME is not defined!")
+        logger.warning("⚠️  BUCKET_NAME environment variable is not defined!")
 
     logger.info("🚀 Starting Flask application on port 8080")
     app.run(host='0.0.0.0', port=8080, debug=False)
